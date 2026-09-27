@@ -12,7 +12,8 @@ import android.print.PrintManager;
 import android.content.Context;
 import android.os.Build;
 import android.os.Environment;
-import android.provider.Settings;
+import android.provider.MediaStore;
+import android.content.ContentValues;
 import android.widget.Toast;
 import android.graphics.pdf.PdfDocument;
 import android.graphics.Canvas;
@@ -74,23 +75,63 @@ public class MainActivity extends Activity {
                         canvas.restore();
                         pdf.finishPage(page);
                     }
-                    File dir;
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        dir = new File(getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS), "Luxus AI");
-                    } else {
-                        dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "Luxus AI");
+                    String fileName = "Luxus_AI_Quotation_" + System.currentTimeMillis() + ".pdf";
+                    File legacyFile = null;
+                    android.net.Uri savedUri = null;
+                    FileOutputStream out = null;
+                    PdfDocument pdf = new PdfDocument();
+                    try {
+                        for (int i = 0; i < pageCount; i++) {
+                            PdfDocument.PageInfo info = new PdfDocument.PageInfo.Builder(pageWidth, pageHeight, i + 1).create();
+                            PdfDocument.Page page = pdf.startPage(info);
+                            Canvas canvas = page.getCanvas();
+                            canvas.drawColor(Color.WHITE);
+                            canvas.save();
+                            canvas.scale(scale, scale);
+                            canvas.translate(0, -i * pageHeight / scale);
+                            webView.draw(canvas);
+                            canvas.restore();
+                            pdf.finishPage(page);
+                        }
+
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            ContentValues values = new ContentValues();
+                            values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
+                            values.put(MediaStore.Downloads.MIME_TYPE, "application/pdf");
+                            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Luxus AI");
+                            values.put(MediaStore.Downloads.IS_PENDING, 1);
+                            savedUri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                            if (savedUri == null) throw new IOException("Could not create PDF in Downloads");
+                            out = (FileOutputStream)getContentResolver().openOutputStream(savedUri);
+                            if (out == null) throw new IOException("Could not open PDF output");
+                            pdf.writeTo(out);
+                            out.close();
+                            out = null;
+                            values.clear();
+                            values.put(MediaStore.Downloads.IS_PENDING, 0);
+                            getContentResolver().update(savedUri, values, null, null);
+                        } else {
+                            File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Luxus AI");
+                            if (!dir.exists() && !dir.mkdirs()) throw new IOException("Could not create PDF folder");
+                            legacyFile = new File(dir, fileName);
+                            out = new FileOutputStream(legacyFile);
+                            pdf.writeTo(out);
+                            out.close();
+                            out = null;
+                        }
+                    } finally {
+                        if (out != null) try { out.close(); } catch(Exception ignored) {}
+                        pdf.close();
                     }
-                    if (!dir.exists() && !dir.mkdirs()) throw new IOException("Could not create PDF folder");
-                    File file = new File(dir, "Luxus_AI_Quotation_" + System.currentTimeMillis() + ".pdf");
-                    FileOutputStream out = new FileOutputStream(file);
-                    pdf.writeTo(out);
-                    out.close();
-                    pdf.close();
-                    Toast.makeText(MainActivity.this, "PDF saved successfully", Toast.LENGTH_LONG).show();
-                    Intent share = new Intent(Intent.ACTION_SEND);
-                    share.setType("application/pdf");
-                    share.putExtra(Intent.EXTRA_STREAM, Uri.fromFile(file));
-                    try { startActivity(Intent.createChooser(share, "Share quotation PDF")); } catch(Exception ignored) {}
+
+                    Toast.makeText(MainActivity.this, "PDF saved in Downloads/Luxus AI", Toast.LENGTH_LONG).show();
+                    if (savedUri != null) {
+                        Intent share = new Intent(Intent.ACTION_SEND);
+                        share.setType("application/pdf");
+                        share.putExtra(Intent.EXTRA_STREAM, savedUri);
+                        share.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        try { startActivity(Intent.createChooser(share, "Share quotation PDF")); } catch(Exception ignored) {}
+                    }
                 } catch(Exception e) {
                     Toast.makeText(MainActivity.this, "PDF save failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
                 }
