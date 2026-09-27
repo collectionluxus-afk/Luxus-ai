@@ -79,7 +79,6 @@ public class MainActivity extends Activity {
                     File legacyFile = null;
                     android.net.Uri savedUri = null;
                     FileOutputStream out = null;
-                    PdfDocument pdf = new PdfDocument();
                     try {
                         for (int i = 0; i < pageCount; i++) {
                             PdfDocument.PageInfo info = new PdfDocument.PageInfo.Builder(pageWidth, pageHeight, i + 1).create();
